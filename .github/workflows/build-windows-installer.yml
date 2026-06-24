@@ -102,7 +102,7 @@ jobs:
         working-directory: my-repo
         run: |
           # iscc is pre-installed on GitHub Actions windows-latest runners
-          iscc /DMyAppVersion=${{ needs.check-release.outputs.version }} .github\scripts\aseprite_installer.iss
+          iscc /DMyAppVersion="${{ needs.check-release.outputs.version }}" /DBuildDir="${{ github.workspace }}\aseprite\build" /DSourceDir="${{ github.workspace }}\aseprite" .github\scripts\aseprite_installer.iss
 
       - name: Create Release
         uses: softprops/action-gh-release@v2
