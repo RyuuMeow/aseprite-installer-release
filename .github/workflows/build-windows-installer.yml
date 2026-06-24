@@ -95,7 +95,10 @@ jobs:
             -DLAF_BACKEND=skia `
             -DSKIA_DIR=${{ github.workspace }}/aseprite/skia `
             -DSKIA_LIBRARY_DIR=${{ github.workspace }}/aseprite/skia/out/Release-x64 `
-            -DSKIA_LIBRARY=${{ github.workspace }}/aseprite/skia/out/Release-x64/skia.lib
+            -DSKIA_LIBRARY=${{ github.workspace }}/aseprite/skia/out/Release-x64/skia.lib `
+            -DCMAKE_USE_OPENSSL=OFF `
+            -DENABLE_OPENSSL=OFF `
+            -DENABLE_CCACHE=OFF
           cmake --build build --config Release
 
       - name: Compile Inno Setup Installer
