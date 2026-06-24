@@ -1,0 +1,115 @@
+name: Build Aseprite Installer
+
+on:
+  schedule:
+    - cron: '0 2 * * *' # Every day at 02:00 UTC
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Specific version tag to build (e.g., v1.3.6). Leave empty to build latest.'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  check-release:
+    runs-on: ubuntu-latest
+    outputs:
+      should_build: ${{ steps.check.outputs.should_build }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - name: Check for new release
+        id: check
+        run: |
+          if [ "${{ github.event.inputs.version }}" != "" ]; then
+            echo "Manual version specified: ${{ github.event.inputs.version }}"
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "version=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # Fetch the latest release tag from official aseprite/aseprite repository
+          LATEST_UPSTREAM=$(curl -s https://api.github.com/repos/aseprite/aseprite/releases/latest | jq -r .tag_name)
+          if [ "$LATEST_UPSTREAM" == "null" ] || [ -z "$LATEST_UPSTREAM" ]; then
+            echo "Failed to fetch upstream release."
+            exit 1
+          fi
+          
+          # Fetch the latest release tag from our own repository
+          LATEST_LOCAL=$(curl -s -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" https://api.github.com/repos/${{ github.repository }}/releases/latest | jq -r .tag_name)
+          
+          echo "Upstream latest: $LATEST_UPSTREAM"
+          echo "Local latest: $LATEST_LOCAL"
+          
+          if [ "$LATEST_UPSTREAM" != "$LATEST_LOCAL" ]; then
+            echo "New version found: $LATEST_UPSTREAM. Proceeding with build."
+            echo "should_build=true" >> $GITHUB_OUTPUT
+            echo "version=$LATEST_UPSTREAM" >> $GITHUB_OUTPUT
+          else
+            echo "Already up to date."
+            echo "should_build=false" >> $GITHUB_OUTPUT
+          fi
+
+  build-and-package:
+    needs: check-release
+    if: needs.check-release.outputs.should_build == 'true'
+    runs-on: windows-latest
+    steps:
+      - name: Checkout our repository (for scripts)
+        uses: actions/checkout@v4
+        with:
+          path: my-repo
+
+      - name: Checkout Aseprite Source
+        uses: actions/checkout@v4
+        with:
+          repository: aseprite/aseprite
+          ref: ${{ needs.check-release.outputs.version }}
+          submodules: 'recursive'
+          path: aseprite
+
+      - name: Install Ninja
+        uses: seanmiddleditch/gha-setup-ninja@v4
+
+      - name: Setup MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - name: Download Skia
+        working-directory: aseprite
+        shell: bash
+        run: |
+          mkdir -p skia
+          # Use the Aseprite provided script to get the exact matching Skia URL
+          SKIA_URL=$(bash laf/misc/skia-url.sh release windows x64)
+          echo "Downloading Skia from: $SKIA_URL"
+          curl -L -o skia.zip $SKIA_URL
+          unzip -q skia.zip -d skia
+
+      - name: Build Aseprite
+        working-directory: aseprite
+        run: |
+          cmake -B build -S . -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DLAF_BACKEND=skia `
+            -DSKIA_DIR=skia `
+            -DSKIA_LIBRARY_DIR=skia/out/Release-x64 `
+            -DSKIA_LIBRARY=skia/out/Release-x64/skia.lib
+          cmake --build build --config Release
+
+      - name: Compile Inno Setup Installer
+        working-directory: my-repo
+        run: |
+          # iscc is pre-installed on GitHub Actions windows-latest runners
+          iscc /DMyAppVersion=${{ needs.check-release.outputs.version }} .github\scripts\aseprite_installer.iss
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.check-release.outputs.version }}
+          name: Aseprite ${{ needs.check-release.outputs.version }}
+          files: my-repo/Output/Aseprite-${{ needs.check-release.outputs.version }}-Installer.exe
+          body: "Automated build of Aseprite ${{ needs.check-release.outputs.version }} for Windows."
+          draft: false
+          prerelease: false
