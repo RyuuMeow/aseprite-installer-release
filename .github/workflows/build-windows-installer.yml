@@ -109,7 +109,7 @@ jobs:
         with:
           tag_name: ${{ needs.check-release.outputs.version }}
           name: Aseprite ${{ needs.check-release.outputs.version }}
-          files: my-repo/Output/Aseprite-${{ needs.check-release.outputs.version }}-Installer.exe
+          files: my-repo/.github/scripts/Output/Aseprite-${{ needs.check-release.outputs.version }}-Installer.exe
           body: "Automated build of Aseprite ${{ needs.check-release.outputs.version }} for Windows."
           draft: false
           prerelease: false
